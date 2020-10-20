@@ -45,51 +45,82 @@ cv2.imwrite(args.output, result[0][:, :, ::-1])
 [test_single_image.py](https://github.com/dptmf7705/inpainting_tflite/blob/master/test_single_image.py)
 
 ```bash
-...
 
-# inpaint 모델
-model = InpaintCAModel()
+def get_input(image_path, mask_path, image_width, image_height):
+    ...
+    
+    # 이미지, 마스크 shape 변경 : [512, 680, 3] to [1, 512, 680, 3]
+    image = np.expand_dims(image, 0)
+    mask = np.expand_dims(mask, 0)
 
-...
+    # [ 이미지 + 마스크 ] 붙여서 input_image 만들기
+    # input_image shape 은 [1, 512, 1360, 3] 이 됨.
+    input_image = np.concatenate([image, mask], axis=2)
 
-# 이미지, 마스크 shape 변경 : [512, 680, 3] to [1, 512, 680, 3]
-image = np.expand_dims(image, 0)
-mask = np.expand_dims(mask, 0)
 
-# [이미지 + 마스크] 붙여서 input_image 만들기
-# input_image shape 은 [1, 512, 1360, 3] 이 됨.
-input_image = np.concatenate([image, mask], axis=2)
+def test_single_image(input_image, output_path, image_height, image_width, ckpt_dir):
+    ...
+    
+    # inpaint 모델
+    model = InpaintCAModel()
 
-# input_image 를 tf.placeholder 로 선언
-# name='input' 은 나중에 frozen graph 만들고 tflite 변환할 때 필요함
-input_image_ph = tf.placeholder(tf.float32, name='input', shape=(1, image_height, image_width*2, 3)) 
+    # input_image 를 tf.placeholder 로 선언
+    # name='input' 은 나중에 frozen graph 만들고 tflite 변환할 때 필요함
+    input_image_ph = tf.placeholder(tf.float32, name='input', shape=(1, image_height, image_width*2, 3)) 
 
-output = model.build_server_graph(input_image_ph)
-output = (output + 1.) * 127.5
-output = tf.reverse(output, [-1])
-output = tf.saturate_cast(output, tf.uint8)
+    output = model.build_server_graph(input_image_ph)
+    output = (output + 1.) * 127.5
+    output = tf.reverse(output, [-1])
+    output = tf.saturate_cast(output, tf.uint8)
 
-...
+    ...
 
-# 모델 실행시킬 때 feed_dict 로 input_image 넘겨줌
-result = sess.run(output, feed_dict={input_image_ph: input_image})
+    # 모델 실행시킬 때 feed_dict 로 input_image 넘겨줌
+    result = sess.run(output, feed_dict={input_image_ph: input_image})
 
-# output 사진 저장
-cv2.imwrite(out, result[0][:, :, ::-1])
+    # output 사진 저장
+    cv2.imwrite(output_path, result[0][:, :, ::-1])
 
-# 체크포인트 저장 - frozen graph 만들 때 필요함
-saver = tf.train.Saver().save(sess, './model_logs/test/model.ckpt')
+    # 체크포인트 저장 - frozen graph 만들 때 필요함
+    saver = tf.train.Saver().save(sess, './model_logs/test/model.ckpt')
 
-# tensorboard 출력을 위한 그래프 저장 - output node 이름 찾는데 필요함
-tf.summary.FileWriter('./tbgraph', sess.graph)
+    # tensorboard 출력을 위한 그래프 저장 - output node 이름 찾는데 필요함
+    tf.summary.FileWriter('./tbgraph', sess.graph)
 ```
 
 <br>
 
-test_single_image.py 실행 (tensorflow=1.7.0 에서 실행함):
+#### test_single_image.py 실행 (tensorflow 1.7.0):
+
+<br>
+
+Directory Tree 
+
+```
+- test_data
+  -- input
+     --- case1.png
+     --- case2.png
+           ...
+  -- mask
+     --- case1.png
+     --- case2.png
+           ...
+- model_logs
+  -- places2
+     --- checkpoint
+     --- <snap_name>.data
+     --- <snap_name>.index
+     --- <snap_name>.meta
+- test_single_image.py
+```
+
+<br>
+
+Run 
 
 ```bash
-python test_single_image.py --test_dir=test_data --image_height=512 --image_width=680 --checkpoint_dir=model_logs/places2
+python test_single_image.py --data_dir=test_data --ckpt_dir=model_logs/places2 --image_height=512 --image_width=680
 ```
 
 <br>
