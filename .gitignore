@@ -3,3 +3,4 @@ model_logs
 logs
 data
 tbgraph/
+tflite/
