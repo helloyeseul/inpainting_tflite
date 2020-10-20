@@ -98,6 +98,8 @@ def test_single_image(input_image, output_path, image_height, image_width, ckpt_
     result = sess.run(output, feed_dict={input_image_ph: input_image})
     print("Running model done.")
 
+    # save output image to file
+    print("Saving output to {}".format(output_path))
     cv2.imwrite(output_path, result[0][:, :, ::-1])
     print("Saving output done.")
 
