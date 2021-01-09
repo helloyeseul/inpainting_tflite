@@ -128,7 +128,7 @@ python test_single_image.py --data_dir=test_data --ckpt_dir=model_logs/places2 -
 
 ## 2. frozen graph 만들기
 
-[freeze.py](https://github.com/dptmf7705/inpainting_tflite/blob/master/test.py)
+[freeze.py](https://github.com/dptmf7705/inpainting_tflite/blob/master/freeze.py)
 
 ```bash
 ...
