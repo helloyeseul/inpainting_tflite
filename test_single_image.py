@@ -1,10 +1,12 @@
-import argparse
-
-import os
+import os, argparse
 import cv2
 import numpy as np
-import tensorflow as tf
 import neuralgym as ng
+import tensorflow as tf
+
+from tensorflow.python.framework import graph_util
+from tensorflow.core.framework import graph_pb2
+from tensorflow.python.tools import optimize_for_inference_lib
 
 from inpaint_model import InpaintCAModel
 
@@ -31,7 +33,7 @@ def get_dirs(data_dir, index):
     return image, mask, out
 
 
-def get_input(image_path, mask_path, image_width, image_height):
+def get_input_image(image_path, mask_path, image_height, image_width):
     # load image and mask
     image = cv2.imread(image_path)
     mask = cv2.imread(mask_path)
@@ -59,10 +61,12 @@ def get_input(image_path, mask_path, image_width, image_height):
 
     print("input image shape: {}".format(input_image.shape))
 
-    return input_image, h, w
+    return input_image
 
 
-def test_single_image(input_image, output_path, image_height, image_width, ckpt_dir):
+def test_single_image(image_path, mask_path, output_path, image_height, image_width, ckpt_dir):
+    # generate input image
+    input_image = get_input_image(image_path, mask_path, image_height, image_width)
 
     # start sess configuration
     sess_config = tf.ConfigProto()
@@ -93,6 +97,10 @@ def test_single_image(input_image, output_path, image_height, image_width, ckpt_
 
     sess.run(assign_ops)
 
+    # input, output
+    print("input = {}".format(input_image_ph))
+    print("output = {}".format(output))
+
     # run model
     print("Running model ...")
     result = sess.run(output, feed_dict={input_image_ph: input_image})
@@ -103,28 +111,102 @@ def test_single_image(input_image, output_path, image_height, image_width, ckpt_
     cv2.imwrite(output_path, result[0][:, :, ::-1])
     print("Saving output done.")
 
-    # save checkpoint
-    saver = tf.train.Saver().save(sess, "./model_logs/test/model.ckpt")
+    save_tensorboard_log(sess, "trensorboard")
 
+    return sess
+
+
+def save_checkpoint(sess, ckpt_path):
+    # save checkpoint
+    print("Saving checkpoint to {}".format(ckpt_path))
+    saver = tf.train.Saver().save(sess, ckpt_path)
+    print("Saving checkpoint done.")
+
+
+def save_tensorboard_log(sess, output_dir):
     # save graph for Tensorboard
-    tf.summary.FileWriter("./tbgraph", sess.graph)
+    print("Saving Tensorboard log file to {}".format(output_dir))
+    tf.summary.FileWriter(output_dir, sess.graph)
+    print("Saving Tensorboard log file done.")
+
+
+def save_graph(sess, output_dir):
+    # save graph to file
+    print("Saving graph file to {}".format(output_dir))
+    tf.train.write_graph(sess.graph_def, output_dir + "/", "graph.pbtxt")
+    tf.train.write_graph(sess.graph_def, output_dir + "/", "graph.pb")
+    print("Saving graph file done.")
+
+
+def save_frozen_graph(sess):
+    output_file = "tflite"
+
+    # check output directory exists
+    if not os.path.exists(output_file):
+        os.makedirs(output_file)
+
+    output_file = output_file + "/frozen_graph.pb"
+
+    input_node_names = "input"
+    output_node_names = "saturate_cast"
+    # output_node_names = "ReverseV2"
+
+    input_graph_def = tf.get_default_graph().as_graph_def()
+
+    # freeze graph
+    output_graph_def = graph_util.convert_variables_to_constants(
+        sess, input_graph_def, output_node_names.split(",")
+    )
+
+    # print nodes info
+    # display_nodes(output_graph_def.node)
+
+    # optimize graph - only take input~output graph
+    optimize_for_inference_lib.optimize_for_inference(
+        output_graph_def,
+        input_node_names.split(","),
+        output_node_names.split(","),
+        tf.uint8.as_datatype_enum,
+    )
 
     # save graph to file
-    # tf.train.write_graph(sess.graph_def, './graph/', 'graph.pbtxt')
-    # tf.train.write_graph(sess.graph_def, './graph/', 'graph.pb')
+    with tf.gfile.GFile(output_file, "wb") as f:
+        f.write(output_graph_def.SerializeToString())
+
+    print("Saving graph done.")
+    print("{} operations in the graph.".format(len(output_graph_def.node)))
+
+
+def display_nodes(nodes):
+    for i, node in enumerate(nodes):
+        print("%d %s %s" % (i, node.name, node.op))
+        [print(u"└─── %d ─ %s" % (i, n)) for i, n in enumerate(node.input)]
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-
-    parser.add_argument("--data_dir", default="", type=str)
-    parser.add_argument("--image_height", default="", type=int)
-    parser.add_argument("--image_width", default="", type=int)
-    parser.add_argument("--ckpt_dir", default="", type=str)
-
+    parser.add_argument("--data_dir", default="test_data", type=str)
+    parser.add_argument("--image_height", default="512", type=int)
+    parser.add_argument("--image_width", default="680", type=int)
+    parser.add_argument("--ckpt_dir", default="model_logs/places2", type=str)
+    parser.add_argument("--output_ckpt_dir", default="model_logs/test", type=str)
+    parser.add_argument("--tensorboard_dir", default="tensorboard", type=str)
     args = parser.parse_args()
 
     image, mask, out = get_dirs(args.data_dir, 0)
-    input_image, h, w = get_input(image, mask, args.image_width, args.image_height)
 
-    test_single_image(input_image, out, h, w, args.ckpt_dir)
+    sess = test_single_image(
+        image_path=image,
+        mask_path=mask,
+        output_path=out,
+        image_height=args.image_height,
+        image_width=args.image_width,
+        ckpt_dir=args.ckpt_dir,
+    )
+
+    save_frozen_graph(sess)
+    save_checkpoint(sess, args.output_ckpt_dir + "/model.ckpt")
+    save_tensorboard_log(sess, args.tensorboard_dir)
+    # save_graph(sess, args.output_ckpt_dir)
+
+    sess.close()

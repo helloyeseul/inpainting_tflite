@@ -88,13 +88,9 @@ def test_single_image(input_image, output_path, image_height, image_width, ckpt_
     tf.summary.FileWriter('./tbgraph', sess.graph)
 ```
 
-<br>
-
 #### test_single_image.py 실행 (tensorflow 1.7.0):
 
-<br>
-
-Directory Tree 
+* Directory Tree 
 
 ```
 - test_data
@@ -115,9 +111,7 @@ Directory Tree
 - test_single_image.py
 ```
 
-<br>
-
-Run 
+* Run  `python test_single_image.py --data_dir=test_data --ckpt_dir=model_logs/places2 --image_height=512 --image_width=680`
 
 ```bash
 python test_single_image.py --data_dir=test_data --ckpt_dir=model_logs/places2 --image_height=512 --image_width=680
@@ -133,36 +127,35 @@ python test_single_image.py --data_dir=test_data --ckpt_dir=model_logs/places2 -
 ```bash
 ...
 
-# input node 이름 - test_single_image.py 에서 placeholder 에 선언했던 name
-input_node_names = "input"
-# output node 이름 - tensorboard 실행해서 직접 찾아야됨.
-output_node_names = "saturate_cast"
+# input node 이름 : test_single_image.py 에서 placeholder 에 선언했던 name
+# output node 이름 : tensorboard 실행해서 직접 찾아야됨.
+def freeze_graph(ckpt_dir, output_file, input_nodes, output_nodes):
 
-# test_single_image.py 에서 저장한 체크포인트 불러오기
-checkpoint = tf.train.get_checkpoint_state(model_dir)
-input_checkpoint = checkpoint.model_checkpoint_path
-saver = tf.train.import_meta_graph(input_checkpoint + '.meta', clear_devices=True)
+    # test_single_image.py 에서 저장한 체크포인트 불러오기
+    ckpt = tf.train.get_checkpoint_state(ckpt_dir)
+    ckpt_path = ckpt.model_checkpoint_path
 
-saver.restore(sess, input_checkpoint)
+    saver = tf.train.import_meta_graph(ckpt_path + ".meta", clear_devices=True)
 
-# 그래프 얼리기 - frozen graph 생성
-output_graph_def = graph_util.convert_variables_to_constants(
-        sess, input_graph_def, output_node_names.split(","))
+    # 그래프 불러오기
+    graph = tf.get_default_graph()
+    input_graph_def = graph.as_graph_def()
 
-...
+    ...
+    
+    # 그래프 얼리기 : variables 를 모두 constants 로 바꿔서 frozen graph 만들기
+    output_graph_def = graph_util.convert_variables_to_constants(
+        sess, input_graph_def, output_nodes.split(",")
+    )
 
-# 얼린 그래프를 파일에 저장
-with tf.gfile.GFile(output_graph, "wb") as f:
-    f.write(output_graph_def.SerializeToString())
+    # 얼린 그래프를 파일에 저장
+    with tf.gfile.GFile(output_file, "wb") as f:
+        f.write(output_graph_def.SerializeToString())
 ```
 
-<br>
+#### freeze.py 실행 (tensorflow 1.7.0):
 
-freeze.py 실행 (tensorflow=1.7.0 에서 실행함):
-
-```bash
-python freeze.py --model_dir=model_logs/test/model --output_dir=tflite
-```
+Run `python freeze.py --model_dir=model_logs/test/model --output_dir=tflite`
 
 <br>
 <br>
